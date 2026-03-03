@@ -1,9 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Bot, GitBranch, MessageSquare, Play, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { Bot, GitBranch, MessageSquare, Play, Clock, CheckCircle2, AlertCircle, Radio } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import { useSessionMessages } from "@/lib/session-store";
+import { DEFAULT_AGENTS, AgentRole } from "@/lib/agents";
 
 const stats = [
   { label: "Active Agents", value: "4", icon: Bot, color: "text-agent-planner" },
@@ -32,9 +34,19 @@ const statusIcons = {
   failed: AlertCircle,
 };
 
+const roleColorMap: Record<AgentRole | "user", string> = {
+  planner: "bg-agent-planner",
+  coder: "bg-agent-coder",
+  reviewer: "bg-agent-reviewer",
+  tester: "bg-agent-tester",
+  custom: "bg-primary",
+  user: "bg-agent-user",
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
-
+  const { messages, isRunning, thinkingAgent } = useSessionMessages();
+  const recentAgentMessages = messages.filter((m) => m.role === "assistant").slice(-6);
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between">
@@ -142,6 +154,81 @@ export default function Dashboard() {
                 );
               })}
             </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Live Agent Activity Feed */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base text-foreground">Live Agent Activity</CardTitle>
+                {isRunning && (
+                  <span className="flex items-center gap-1.5">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-agent-coder opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-agent-coder" />
+                    </span>
+                    <span className="text-xs text-agent-coder font-medium">Live</span>
+                  </span>
+                )}
+              </div>
+              {messages.length > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => navigate("/session")} className="text-xs h-7">
+                  Open Session →
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {recentAgentMessages.length === 0 && !thinkingAgent ? (
+              <div className="px-6 py-8 text-center">
+                <MessageSquare className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">Henüz aktif ajan konuşması yok.</p>
+                <p className="text-xs text-muted-foreground mt-1">Bir oturum başlatın ve ajanların birbirleri ile konuşmasını izleyin.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                <AnimatePresence>
+                  {recentAgentMessages.map((msg) => (
+                    <motion.div
+                      key={msg.id}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="flex items-start gap-3 px-6 py-3 hover:bg-accent/20 transition-colors"
+                    >
+                      <div className={`h-7 w-7 rounded-full ${roleColorMap[msg.agentRole || "user"]} flex items-center justify-center text-xs shrink-0 mt-0.5`}>
+                        {DEFAULT_AGENTS.find((a) => a.id === msg.agentId)?.icon || "🤖"}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-sm font-medium text-foreground">{msg.agentName}</span>
+                          <Badge variant="outline" className={`text-[10px] ${roleColorMap[msg.agentRole || "user"]} text-white border-0 h-4`}>
+                            {msg.agentRole}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground">{msg.timestamp.toLocaleTimeString()}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {msg.content.replace(/[#*`>]/g, "").slice(0, 120)}…
+                        </p>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+                {thinkingAgent && (
+                  <div className="flex items-center gap-3 px-6 py-3">
+                    <div className="flex gap-1">
+                      {[0, 1, 2].map((i) => (
+                        <div key={i} className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-pulse" style={{ animationDelay: `${i * 0.2}s` }} />
+                      ))}
+                    </div>
+                    <span className="text-xs text-muted-foreground">{thinkingAgent} düşünüyor…</span>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>

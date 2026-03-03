@@ -9,6 +9,7 @@ import { Send, Pause, Play, RotateCcw, ChevronDown, Bot } from "lucide-react";
 import { ChatMessage, AgentRole, DEFAULT_AGENTS } from "@/lib/agents";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
+import { sessionStore, useSessionMessages } from "@/lib/session-store";
 
 const roleColorMap: Record<AgentRole | "user", string> = {
   planner: "bg-agent-planner text-white",
@@ -44,13 +45,21 @@ const ThinkingIndicator = ({ agentName }: { agentName: string }) => (
 );
 
 export default function Session() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { messages, isRunning, thinkingAgent } = useSessionMessages();
   const [input, setInput] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [thinkingAgent, setThinkingAgent] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const agents = DEFAULT_AGENTS;
+
+  const setMessages = (msgs: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+    if (typeof msgs === "function") {
+      sessionStore.setMessages(msgs(sessionStore.messages));
+    } else {
+      sessionStore.setMessages(msgs);
+    }
+  };
+  const setIsRunning = (val: boolean) => sessionStore.setRunning(val);
+  const setThinkingAgent = (val: string | null) => sessionStore.setThinkingAgent(val);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -125,10 +134,8 @@ export default function Session() {
   };
 
   const resetSession = () => {
-    setMessages([]);
-    setIsRunning(false);
+    sessionStore.reset();
     setIsPaused(false);
-    setThinkingAgent(null);
   };
 
   return (
