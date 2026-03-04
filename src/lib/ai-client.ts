@@ -225,6 +225,8 @@ export async function callAI(params: CallAiParams): Promise<string> {
       return callAnthropic(apiKey.apiKey, model, messages, onChunk, signal);
     case "google":
       return callGoogle(apiKey.apiKey, model, messages, onChunk, signal);
+    // kimi uses OpenAI-compat endpoint at moonshot.cn
+    case "kimi":
     default:
       return callOpenAiCompat(baseUrl, apiKey.apiKey, model, messages, {}, onChunk, signal);
   }

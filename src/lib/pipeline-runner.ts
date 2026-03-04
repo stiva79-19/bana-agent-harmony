@@ -1,5 +1,5 @@
 import { Agent, ChatMessage } from "./agents";
-import { ApiKeyStore, getDefaultKey } from "./api-keys";
+import { ApiKeyStore, getDefaultKey, getKeyForAgent } from "./api-keys";
 import { callAI, AiMessage } from "./ai-client";
 import { extractCodeBlocks, executeCode, ENGINE_LABELS } from "./executor";
 
@@ -24,8 +24,8 @@ function buildHistory(messages: ChatMessage[]): AiMessage[] {
 
 export async function runPipeline(params: RunPipelineParams): Promise<void> {
   const { task, agents, apiKeyStore, onMessage, onThinking, signal, enableExecution = true } = params;
-  const apiKey = getDefaultKey(apiKeyStore);
-  if (!apiKey) throw new Error("No API key configured. Please add one in Settings.");
+  const defaultKey = getDefaultKey(apiKeyStore);
+  if (!defaultKey) throw new Error("No API key configured. Please add one in Settings.");
 
   const activeAgents = agents.filter((a) => a.active);
   if (!activeAgents.length) throw new Error("No active agents in pipeline.");
@@ -44,6 +44,10 @@ export async function runPipeline(params: RunPipelineParams): Promise<void> {
 
   for (const agent of activeAgents) {
     if (signal?.aborted) break;
+
+    // Pick the key assigned to this agent (falls back to default)
+    const apiKey = getKeyForAgent(apiKeyStore, agent.id);
+    if (!apiKey) continue;
 
     onThinking(agent.name);
 

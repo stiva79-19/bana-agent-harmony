@@ -16,14 +16,16 @@ import {
   PROVIDER_LABELS,
   PROVIDER_BASE_URLS,
   getDefaultModel,
+  AGENT_ROLE_SUGGESTED_PROVIDER,
 } from "@/lib/api-keys";
 import { testApiKey } from "@/lib/ai-client";
 import { getCapabilities, type Capabilities } from "@/lib/executor";
+import { DEFAULT_AGENTS } from "@/lib/agents";
 
-const PROVIDERS: Provider[] = ["openai", "anthropic", "google", "openrouter", "custom"];
+const PROVIDERS: Provider[] = ["openai", "anthropic", "google", "openrouter", "kimi", "custom"];
 
 export default function SettingsPage() {
-  const [store, setStore] = useState<ApiKeyStore>({ keys: [], defaultKeyId: null });
+  const [store, setStore] = useState<ApiKeyStore>({ keys: [], defaultKeyId: null, agentAssignments: [] });
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [checkingCaps, setCheckingCaps] = useState(false);
   const [provider, setProvider] = useState<Provider>("openai");
@@ -296,6 +298,70 @@ export default function SettingsPage() {
                   </div>
                 );
               })}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Agent Model Assignment */}
+      {store.keys.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base text-foreground">Agent Model Assignment</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Assign a different API key to each agent. Each agent can use the model it&apos;s best at.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {DEFAULT_AGENTS.map((agent) => {
+                const assignment = store.agentAssignments.find((a) => a.agentId === agent.id);
+                const currentKeyId = assignment?.keyId ?? null;
+                const suggestedProvider = AGENT_ROLE_SUGGESTED_PROVIDER[agent.role];
+
+                return (
+                  <div key={agent.id} className="flex items-center gap-3 p-3 rounded-lg border border-border">
+                    <div className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center text-base shrink-0">
+                      {agent.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-sm font-medium text-foreground">{agent.name}</span>
+                        <Badge variant="secondary" className="text-[10px]">{agent.role}</Badge>
+                        {!currentKeyId && (
+                          <Badge variant="outline" className="text-[10px] text-muted-foreground border-dashed">
+                            suggested: {PROVIDER_LABELS[suggestedProvider]}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">{agent.description}</p>
+                    </div>
+                    <select
+                      value={currentKeyId ?? ""}
+                      onChange={(e) => {
+                        const keyId = e.target.value || null;
+                        const assignments = store.agentAssignments.filter((a) => a.agentId !== agent.id);
+                        if (keyId) assignments.push({ agentId: agent.id, keyId });
+                        persist({ ...store, agentAssignments: assignments });
+                      }}
+                      className="text-xs bg-secondary border border-border rounded-md px-2 py-1.5 text-foreground shrink-0 max-w-[160px]"
+                    >
+                      <option value="">Default key</option>
+                      {store.keys.map((k) => (
+                        <option key={k.id} value={k.id}>
+                          {k.label} ({k.model || getDefaultModel(k.provider)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+
+              <div className="pt-2 border-t border-border">
+                <p className="text-xs text-muted-foreground">
+                  💡 Tip: Assign <strong>Claude</strong> to Planner, <strong>Codex/GPT</strong> to Coder, <strong>Gemini</strong> to Reviewer, <strong>Kimi</strong> to Tester for the best multi-model results.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </motion.div>
