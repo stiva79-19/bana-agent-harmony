@@ -1,73 +1,127 @@
-# Welcome to your Lovable project
+# 🤖 Agent Harmony
 
-## Project info
+**Open-source multi-agent orchestration UI** — Watch AI agents collaborate in real time.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Submit a task, and a pipeline of specialized agents (Planner → Coder → Reviewer → Tester) work together using your own API key. No backend, no data collection — everything runs in your browser.
 
-## How can I edit this code?
+![Agent Harmony](https://img.shields.io/badge/status-beta-orange) ![License](https://img.shields.io/badge/license-MIT-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 
-There are several ways of editing your application.
+---
 
-**Use Lovable**
+## ✨ Features
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- 🧠 **Multi-agent pipeline** — Planner, Coder, Reviewer, Tester collaborate sequentially
+- 🔑 **Bring your own API key** — OpenAI, Anthropic, Google Gemini, OpenRouter, or any OpenAI-compatible endpoint (Ollama, LM Studio, Groq, etc.)
+- 🔒 **100% client-side** — API keys stored only in your browser's localStorage, never sent to any server
+- ⚡ **Streaming responses** — See each agent's output token by token in real time
+- 🛑 **Interruptible** — Stop the pipeline at any time
+- 🎨 **Dark UI** — Built with shadcn/ui + Tailwind
 
-Changes made via Lovable will be committed automatically to this repo.
+---
 
-**Use your preferred IDE**
+## 🚀 Quick Start
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Option 1 — One-line install (recommended)
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+```bash
+curl -fsSL https://raw.githubusercontent.com/stiva79-19/bana-agent-harmony/main/install.sh | bash
+```
 
-Follow these steps:
+### Option 2 — Manual
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+```bash
+# Clone
+git clone https://github.com/stiva79-19/bana-agent-harmony.git
+cd bana-agent-harmony
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# Install dependencies
+npm install
 
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Start dev server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Then open **http://localhost:8080** in your browser.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+> **First time?** Go to **Settings** and add your API key. The app will guide you.
 
-**Use GitHub Codespaces**
+---
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## 🔑 Supported Providers
 
-## What technologies are used for this project?
+| Provider | API Key Source | Notes |
+|---|---|---|
+| **OpenAI** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | GPT-4o, GPT-4o-mini, etc. |
+| **Anthropic** | [console.anthropic.com](https://console.anthropic.com) | Claude 3.5 Haiku, Sonnet |
+| **Google Gemini** | [aistudio.google.com](https://aistudio.google.com/app/apikey) | Gemini 2.0 Flash, Pro |
+| **OpenRouter** | [openrouter.ai/keys](https://openrouter.ai/keys) | 200+ models via one key |
+| **Custom** | — | Any OpenAI-compatible endpoint |
 
-This project is built with:
+**Local models** (no API key needed):
+- [Ollama](https://ollama.ai) → `http://localhost:11434/v1`
+- [LM Studio](https://lmstudio.ai) → `http://localhost:1234/v1`
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+---
 
-## How can I deploy this project?
+## 🏗️ Architecture
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+```
+src/
+├── lib/
+│   ├── api-keys.ts        # Secure localStorage key management
+│   ├── ai-client.ts       # Real AI calls with streaming (all providers)
+│   ├── pipeline-runner.ts # Agent pipeline execution
+│   ├── agents.ts          # Agent definitions & system prompts
+│   └── session-store.ts   # Global session state
+├── pages/
+│   ├── Index.tsx          # Dashboard
+│   ├── Session.tsx        # Live agent chat
+│   ├── Agents.tsx         # Agent configuration
+│   ├── Pipelines.tsx      # Pipeline configuration
+│   └── SettingsPage.tsx   # API key management
+└── components/
+    ├── AppSidebar.tsx
+    └── ui/                # shadcn/ui components
+```
 
-## Can I connect a custom domain to my Lovable project?
+---
 
-Yes, you can!
+## 🔒 Security & Privacy
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+- **API keys never leave your browser.** All AI calls are made directly from your browser to the AI provider (OpenAI, Anthropic, etc.).
+- Keys are stored in `localStorage` under the key `agent_harmony_keys`.
+- This app has no backend, no analytics, no tracking.
+- To remove all data: open DevTools → Application → Local Storage → delete `agent_harmony_keys`.
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+---
+
+## 🛠️ Development
+
+```bash
+npm run dev      # Start dev server (port 8080)
+npm run build    # Production build
+npm run preview  # Preview production build
+npm run test     # Run tests
+npm run lint     # Lint
+```
+
+**Tech stack:** Vite · React 18 · TypeScript (strict) · Tailwind CSS · shadcn/ui · Framer Motion
+
+---
+
+## 🤝 Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome!
+
+Ideas for contribution:
+- New agent roles (Designer, DevOps, Security, etc.)
+- Custom pipeline builder UI
+- Export session as markdown/PDF
+- Parallel agent execution
+- Local model auto-detection
+
+---
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE)
