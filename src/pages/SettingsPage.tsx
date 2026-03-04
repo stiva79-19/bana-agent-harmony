@@ -74,6 +74,7 @@ export default function SettingsPage() {
     const next: ApiKeyStore = {
       keys: [...store.keys, newKey],
       defaultKeyId: store.defaultKeyId ?? newKey.id,
+      agentAssignments: store.agentAssignments,
     };
     persist(next);
     setApiKeyInput("");
@@ -85,7 +86,7 @@ export default function SettingsPage() {
     const keys = store.keys.filter((k) => k.id !== id);
     const defaultKeyId =
       store.defaultKeyId === id ? (keys[0]?.id ?? null) : store.defaultKeyId;
-    persist({ keys, defaultKeyId });
+    persist({ keys, defaultKeyId, agentAssignments: store.agentAssignments });
   };
 
   const handleSetDefault = (id: string) => {
