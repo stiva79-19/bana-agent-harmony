@@ -26,6 +26,26 @@ app.use((req, res, next) => {
   next();
 });
 
+// Basic rate limiting — max 20 executions/minute per IP
+const rateLimitMap = new Map();
+app.use("/api/execute", (req, res, next) => {
+  const ip = req.ip || "local";
+  const now = Date.now();
+  const windowMs = 60_000;
+  const max = 20;
+  const record = rateLimitMap.get(ip) || { count: 0, start: now };
+  if (now - record.start > windowMs) {
+    record.count = 0;
+    record.start = now;
+  }
+  record.count++;
+  rateLimitMap.set(ip, record);
+  if (record.count > max) {
+    return res.status(429).json({ error: "Rate limit: max 20 executions/minute" });
+  }
+  next();
+});
+
 // ─── Capability Detection ─────────────────────────────────────────────────────
 
 async function isAvailable(cmd) {

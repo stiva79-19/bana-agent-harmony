@@ -1,7 +1,7 @@
 import { Agent, ChatMessage } from "./agents";
-import { ApiKeyStore, getDefaultKey, getKeyForAgent } from "./api-keys";
+import { ApiKeyStore, getDefaultKey as _getDefaultKey, getKeyForAgent } from "./api-keys";
 import { callAI, AiMessage } from "./ai-client";
-import { extractCodeBlocks, executeCode, ENGINE_LABELS } from "./executor";
+import { extractCodeBlocks, executeCode, ENGINE_LABELS, isCloudEngine, PISTON_PRIVACY_NOTE } from "./executor";
 
 export interface RunPipelineParams {
   task: string;
@@ -24,8 +24,7 @@ function buildHistory(messages: ChatMessage[]): AiMessage[] {
 
 export async function runPipeline(params: RunPipelineParams): Promise<void> {
   const { task, agents, apiKeyStore, onMessage, onThinking, signal, enableExecution = true } = params;
-  const defaultKey = getDefaultKey(apiKeyStore);
-  if (!defaultKey) throw new Error("No API key configured. Please add one in Settings.");
+  if (!_getDefaultKey(apiKeyStore)) throw new Error("No API key configured. Please add one in Settings.");
 
   const activeAgents = agents.filter((a) => a.active);
   if (!activeAgents.length) throw new Error("No active agents in pipeline.");
@@ -129,6 +128,7 @@ export async function runPipeline(params: RunPipelineParams): Promise<void> {
             `**${engineLabel} · ${block.language}**`,
             `\`\`\`\n${result.output || "(no output)"}\n\`\`\``,
             result.error ? `\n⚠️ stderr:\n\`\`\`\n${result.error}\n\`\`\`` : "",
+            isCloudEngine(result.engine) ? `\n> ℹ️ ${PISTON_PRIVACY_NOTE}` : "",
           ]
             .filter(Boolean)
             .join("\n"),

@@ -133,6 +133,16 @@ export const ENGINE_LABELS: Record<string, string> = {
   claude: "⚡ Claude CLI",
   codex: "⚡ Codex CLI",
   local: "⚡ Local",
-  piston: "☁️ Piston",
+  piston: "☁️ Piston (cloud)",
   unavailable: "❌ Failed",
 };
+
+/** Returns true if the result used a cloud engine (user should be aware code left device) */
+export function isCloudEngine(engine: string): boolean {
+  return engine === "piston";
+}
+
+export const PISTON_PRIVACY_NOTE =
+  "Code was sent to Piston API (emkc.org) for execution. " +
+  "No data is stored, but the code temporarily left your device. " +
+  "Install Node.js/Python locally or run `npm start` to execute code on your machine.";
