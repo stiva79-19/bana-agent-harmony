@@ -18,11 +18,14 @@ import {
   getDefaultModel,
 } from "@/lib/api-keys";
 import { testApiKey } from "@/lib/ai-client";
+import { getCapabilities, type Capabilities } from "@/lib/executor";
 
 const PROVIDERS: Provider[] = ["openai", "anthropic", "google", "openrouter", "custom"];
 
 export default function SettingsPage() {
   const [store, setStore] = useState<ApiKeyStore>({ keys: [], defaultKeyId: null });
+  const [caps, setCaps] = useState<Capabilities | null>(null);
+  const [checkingCaps, setCheckingCaps] = useState(false);
   const [provider, setProvider] = useState<Provider>("openai");
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [baseUrlInput, setBaseUrlInput] = useState("");
@@ -35,6 +38,9 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setStore(loadApiKeys());
+    // check execution capabilities on mount
+    setCheckingCaps(true);
+    getCapabilities().then((c) => { setCaps(c); setCheckingCaps(false); });
   }, []);
 
   useEffect(() => {
@@ -294,6 +300,81 @@ export default function SettingsPage() {
           </Card>
         </motion.div>
       )}
+
+      {/* Execution Engine */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base text-foreground flex items-center gap-2">
+              ⚡ Execution Engine
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              After the Coder agent writes code, the Executor automatically runs it and passes the result to the Reviewer. No extra setup required — uses the best available engine.
+            </p>
+
+            {checkingCaps ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking local server…
+              </div>
+            ) : caps ? (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-foreground">Detected engines (priority order):</p>
+                {[
+                  { key: "claude", label: "Claude CLI", note: "Best — uses your claude key" },
+                  { key: "codex", label: "Codex CLI", note: "OpenAI codex CLI" },
+                  { key: "node", label: "Local Node.js", note: "JS/TS — no key needed" },
+                  { key: "python", label: "Local Python", note: "Python — no key needed" },
+                  { key: "bash", label: "Local Bash", note: "Shell scripts" },
+                ].map(({ key, label, note }) => (
+                  <div key={key} className="flex items-center justify-between py-1.5 px-3 rounded-md bg-secondary/40">
+                    <div>
+                      <span className="text-sm text-foreground">{label}</span>
+                      <span className="text-xs text-muted-foreground ml-2">{note}</span>
+                    </div>
+                    {caps[key as keyof Capabilities] ? (
+                      <Badge className="bg-green-900/40 text-green-400 border-0 text-[10px]">✓ Available</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-[10px]">Not found</Badge>
+                    )}
+                  </div>
+                ))}
+                <div className="flex items-center justify-between py-1.5 px-3 rounded-md bg-secondary/40">
+                  <div>
+                    <span className="text-sm text-foreground">Piston API</span>
+                    <span className="text-xs text-muted-foreground ml-2">Cloud fallback — 75+ languages, free, no key</span>
+                  </div>
+                  <Badge className="bg-blue-900/40 text-blue-400 border-0 text-[10px]">☁️ Always on</Badge>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="rounded-md border border-yellow-800/40 bg-yellow-950/20 p-3">
+                  <p className="text-xs text-yellow-300 font-medium">Local server not running</p>
+                  <p className="text-xs text-yellow-400/80 mt-1">
+                    Run <code className="font-mono bg-black/30 px-1 rounded">npm start</code> (instead of <code className="font-mono bg-black/30 px-1 rounded">npm run dev</code>) to enable local code execution.
+                  </p>
+                  <p className="text-xs text-yellow-400/80 mt-1">
+                    Piston API (cloud) is still active as fallback.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7"
+                  onClick={() => {
+                    setCheckingCaps(true);
+                    getCapabilities().then((c) => { setCaps(c); setCheckingCaps(false); });
+                  }}
+                >
+                  Retry detection
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* Providers Reference */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>

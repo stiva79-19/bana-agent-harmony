@@ -1,6 +1,7 @@
 import { Agent, ChatMessage } from "./agents";
 import { ApiKeyStore, getDefaultKey } from "./api-keys";
 import { callAI, AiMessage } from "./ai-client";
+import { extractCodeBlocks, executeCode, ENGINE_LABELS } from "./executor";
 
 export interface RunPipelineParams {
   task: string;
@@ -9,6 +10,7 @@ export interface RunPipelineParams {
   onMessage: (msg: ChatMessage) => void;
   onThinking: (agentName: string | null) => void;
   signal?: AbortSignal;
+  enableExecution?: boolean; // run code after Coder step
 }
 
 function buildHistory(messages: ChatMessage[]): AiMessage[] {
@@ -21,7 +23,7 @@ function buildHistory(messages: ChatMessage[]): AiMessage[] {
 }
 
 export async function runPipeline(params: RunPipelineParams): Promise<void> {
-  const { task, agents, apiKeyStore, onMessage, onThinking, signal } = params;
+  const { task, agents, apiKeyStore, onMessage, onThinking, signal, enableExecution = true } = params;
   const apiKey = getDefaultKey(apiKeyStore);
   if (!apiKey) throw new Error("No API key configured. Please add one in Settings.");
 
@@ -103,6 +105,36 @@ export async function runPipeline(params: RunPipelineParams): Promise<void> {
     };
     history.push(finalMsg);
     onThinking(null);
+
+    // After Coder step: auto-execute code blocks
+    if (enableExecution && agent.role === "coder" && !signal?.aborted) {
+      const blocks = extractCodeBlocks(fullText);
+      if (blocks.length > 0) {
+        onThinking("⚡ Executor");
+        const block = blocks[0]; // run first code block
+        const result = await executeCode(block.code, block.language);
+        const engineLabel = ENGINE_LABELS[result.engine] || result.engine;
+
+        const execMsg: ChatMessage = {
+          id: `exec-${Date.now()}`,
+          role: "assistant",
+          agentId: "executor",
+          agentName: "Executor",
+          agentRole: "custom",
+          content: [
+            `**${engineLabel} · ${block.language}**`,
+            `\`\`\`\n${result.output || "(no output)"}\n\`\`\``,
+            result.error ? `\n⚠️ stderr:\n\`\`\`\n${result.error}\n\`\`\`` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          timestamp: new Date(),
+        };
+        history.push(execMsg);
+        onMessage(execMsg);
+        onThinking(null);
+      }
+    }
 
     // Small pause between agents for readability
     if (!signal?.aborted) {

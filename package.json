@@ -10,7 +10,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "server": "node server.js",
+    "start": "concurrently -n UI,EXEC -c cyan,yellow \"npm run dev\" \"npm run server\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -45,8 +47,10 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "concurrently": "^9.2.1",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
+    "express": "^5.2.1",
     "framer-motion": "^12.34.5",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.462.0",
