@@ -1,0 +1,112 @@
+import { Agent, ChatMessage } from "./agents";
+import { ApiKeyStore, getDefaultKey } from "./api-keys";
+import { callAI, AiMessage } from "./ai-client";
+
+export interface RunPipelineParams {
+  task: string;
+  agents: Agent[];
+  apiKeyStore: ApiKeyStore;
+  onMessage: (msg: ChatMessage) => void;
+  onThinking: (agentName: string | null) => void;
+  signal?: AbortSignal;
+}
+
+function buildHistory(messages: ChatMessage[]): AiMessage[] {
+  return messages
+    .filter((m) => m.role === "assistant" || m.role === "user")
+    .map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.agentName ? `[${m.agentName}]: ${m.content}` : m.content,
+    }));
+}
+
+export async function runPipeline(params: RunPipelineParams): Promise<void> {
+  const { task, agents, apiKeyStore, onMessage, onThinking, signal } = params;
+  const apiKey = getDefaultKey(apiKeyStore);
+  if (!apiKey) throw new Error("No API key configured. Please add one in Settings.");
+
+  const activeAgents = agents.filter((a) => a.active);
+  if (!activeAgents.length) throw new Error("No active agents in pipeline.");
+
+  const history: ChatMessage[] = [];
+
+  // Add user task message
+  const userMsg: ChatMessage = {
+    id: `user-${Date.now()}`,
+    role: "user",
+    content: task,
+    timestamp: new Date(),
+  };
+  history.push(userMsg);
+  onMessage(userMsg);
+
+  for (const agent of activeAgents) {
+    if (signal?.aborted) break;
+
+    onThinking(agent.name);
+
+    // Build context: system prompt + full history
+    const contextMessages: AiMessage[] = [
+      { role: "system", content: agent.systemPrompt },
+      ...buildHistory(history),
+    ];
+
+    let fullText = "";
+    const msgId = `${agent.id}-${Date.now()}`;
+
+    // Create placeholder message
+    const placeholder: ChatMessage = {
+      id: msgId,
+      role: "assistant",
+      agentId: agent.id,
+      agentName: agent.name,
+      agentRole: agent.role,
+      content: "",
+      timestamp: new Date(),
+    };
+    onMessage(placeholder);
+
+    try {
+      fullText = await callAI({
+        apiKey,
+        messages: contextMessages,
+        onChunk: (chunk) => {
+          fullText += chunk;
+          // Update message with streaming content
+          onMessage({
+            ...placeholder,
+            content: fullText,
+          });
+        },
+        signal,
+      });
+    } catch (e) {
+      if (signal?.aborted) break;
+      const errMsg: ChatMessage = {
+        id: `err-${Date.now()}`,
+        role: "assistant",
+        agentId: agent.id,
+        agentName: agent.name,
+        agentRole: agent.role,
+        content: `Error: ${(e as Error).message}`,
+        timestamp: new Date(),
+      };
+      history.push(errMsg);
+      onMessage(errMsg);
+      onThinking(null);
+      throw e;
+    }
+
+    const finalMsg: ChatMessage = {
+      ...placeholder,
+      content: fullText,
+    };
+    history.push(finalMsg);
+    onThinking(null);
+
+    // Small pause between agents for readability
+    if (!signal?.aborted) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+}

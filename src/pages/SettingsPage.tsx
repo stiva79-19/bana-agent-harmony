@@ -1,85 +1,317 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
+import { Eye, EyeOff, Plus, Trash2, CheckCircle2, XCircle, Loader2, ShieldCheck, Star } from "lucide-react";
+import {
+  Provider,
+  ApiKeyConfig,
+  ApiKeyStore,
+  loadApiKeys,
+  saveApiKeys,
+  maskApiKey,
+  PROVIDER_LABELS,
+  PROVIDER_BASE_URLS,
+  getDefaultModel,
+} from "@/lib/api-keys";
+import { testApiKey } from "@/lib/ai-client";
 
-const models = [
-  { id: "google/gemini-3-flash-preview", name: "Gemini 3 Flash", desc: "Fast, balanced" },
-  { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", desc: "Best reasoning" },
-  { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", desc: "Cost-effective" },
-  { id: "openai/gpt-5", name: "GPT-5", desc: "Powerful all-rounder" },
-  { id: "openai/gpt-5-mini", name: "GPT-5 Mini", desc: "Fast & affordable" },
-];
+const PROVIDERS: Provider[] = ["openai", "anthropic", "google", "openrouter", "custom"];
 
 export default function SettingsPage() {
-  const [selectedModel, setSelectedModel] = useState(models[0].id);
+  const [store, setStore] = useState<ApiKeyStore>({ keys: [], defaultKeyId: null });
+  const [provider, setProvider] = useState<Provider>("openai");
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [baseUrlInput, setBaseUrlInput] = useState("");
+  const [modelInput, setModelInput] = useState("");
+  const [labelInput, setLabelInput] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; error?: string }>>({});
+
+  useEffect(() => {
+    setStore(loadApiKeys());
+  }, []);
+
+  useEffect(() => {
+    if (provider !== "custom") {
+      setBaseUrlInput("");
+      setModelInput(getDefaultModel(provider));
+    } else {
+      setBaseUrlInput("");
+      setModelInput("");
+    }
+  }, [provider]);
+
+  const persist = (next: ApiKeyStore) => {
+    setStore(next);
+    saveApiKeys(next);
+  };
+
+  const handleAdd = () => {
+    if (!apiKeyInput.trim()) return;
+    setAdding(true);
+    const newKey: ApiKeyConfig = {
+      id: `key-${Date.now()}`,
+      provider,
+      apiKey: apiKeyInput.trim(),
+      baseUrl: baseUrlInput.trim() || undefined,
+      model: modelInput.trim() || getDefaultModel(provider),
+      label: labelInput.trim() || PROVIDER_LABELS[provider],
+    };
+    const next: ApiKeyStore = {
+      keys: [...store.keys, newKey],
+      defaultKeyId: store.defaultKeyId ?? newKey.id,
+    };
+    persist(next);
+    setApiKeyInput("");
+    setLabelInput("");
+    setAdding(false);
+  };
+
+  const handleDelete = (id: string) => {
+    const keys = store.keys.filter((k) => k.id !== id);
+    const defaultKeyId =
+      store.defaultKeyId === id ? (keys[0]?.id ?? null) : store.defaultKeyId;
+    persist({ keys, defaultKeyId });
+  };
+
+  const handleSetDefault = (id: string) => {
+    persist({ ...store, defaultKeyId: id });
+  };
+
+  const handleTest = async (key: ApiKeyConfig) => {
+    setTestingId(key.id);
+    const result = await testApiKey(key);
+    setTestResults((prev) => ({ ...prev, [key.id]: result }));
+    setTestingId(null);
+  };
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
+    <div className="p-6 space-y-6 max-w-3xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-1">Configure platform defaults</p>
+        <p className="text-sm text-muted-foreground mt-1">Manage API keys and platform configuration</p>
       </div>
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+      {/* Security Banner */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+        <div className="flex items-start gap-3 rounded-lg border border-green-800/40 bg-green-950/30 p-4">
+          <ShieldCheck className="h-5 w-5 text-green-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-green-300">Your API keys are safe</p>
+            <p className="text-xs text-green-400/80 mt-1">
+              Keys are stored only in your browser&apos;s localStorage. They are <strong>never sent to any server</strong>. All AI calls are made directly from your browser to the AI provider.
+            </p>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Add Key */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <Card className="bg-card border-border">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base text-foreground">Default Model</CardTitle>
+            <CardTitle className="text-base text-foreground flex items-center gap-2">
+              <Plus className="h-4 w-4" /> Add API Key
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {models.map((model) => (
-              <label
-                key={model.id}
-                className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
-                  selectedModel === model.id
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/30"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <input
-                    type="radio"
-                    name="model"
-                    value={model.id}
-                    checked={selectedModel === model.id}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="accent-primary"
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{model.name}</p>
-                    <p className="text-xs text-muted-foreground">{model.desc}</p>
-                  </div>
-                </div>
-                <span className="text-[10px] font-mono text-muted-foreground">{model.id}</span>
-              </label>
-            ))}
+          <CardContent className="space-y-4">
+            {/* Provider selector */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Provider</Label>
+              <div className="flex flex-wrap gap-2">
+                {PROVIDERS.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setProvider(p)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors border ${
+                      provider === p
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    {PROVIDER_LABELS[p]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* API Key input */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">API Key</Label>
+              <div className="relative">
+                <Input
+                  type={showKey ? "text" : "password"}
+                  placeholder="sk-..."
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  className="pr-10 font-mono text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Custom base URL */}
+            {provider === "custom" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Base URL (OpenAI compatible)</Label>
+                <Input
+                  placeholder="http://localhost:11434/v1"
+                  value={baseUrlInput}
+                  onChange={(e) => setBaseUrlInput(e.target.value)}
+                  className="font-mono text-sm"
+                />
+              </div>
+            )}
+
+            {/* Model override */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Model (optional, uses default if empty)</Label>
+              <Input
+                placeholder={getDefaultModel(provider)}
+                value={modelInput}
+                onChange={(e) => setModelInput(e.target.value)}
+                className="font-mono text-sm"
+              />
+            </div>
+
+            {/* Label */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Label (optional)</Label>
+              <Input
+                placeholder={PROVIDER_LABELS[provider]}
+                value={labelInput}
+                onChange={(e) => setLabelInput(e.target.value)}
+                className="text-sm"
+              />
+            </div>
+
+            <Button
+              onClick={handleAdd}
+              disabled={!apiKeyInput.trim() || adding || (provider === "custom" && !baseUrlInput.trim())}
+              className="w-full gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Add Key
+            </Button>
           </CardContent>
         </Card>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+      {/* Saved Keys */}
+      {store.keys.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base text-foreground">Saved API Keys</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {store.keys.map((key) => {
+                const isDefault = store.defaultKeyId === key.id;
+                const testResult = testResults[key.id];
+                const isTesting = testingId === key.id;
+                return (
+                  <div
+                    key={key.id}
+                    className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                      isDefault ? "border-primary/40 bg-primary/5" : "border-border"
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-sm font-medium text-foreground truncate">{key.label}</span>
+                        <Badge variant="secondary" className="text-[10px] shrink-0">
+                          {PROVIDER_LABELS[key.provider]}
+                        </Badge>
+                        {isDefault && (
+                          <Badge className="text-[10px] bg-primary/20 text-primary border-0 shrink-0">
+                            Default
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground font-mono">{maskApiKey(key.apiKey)}</p>
+                      {key.model && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{key.model}</p>
+                      )}
+                      {testResult && (
+                        <div className={`flex items-center gap-1 mt-1 text-[10px] ${testResult.ok ? "text-green-400" : "text-red-400"}`}>
+                          {testResult.ok ? (
+                            <><CheckCircle2 className="h-3 w-3" /> Connected</>
+                          ) : (
+                            <><XCircle className="h-3 w-3" /> {testResult.error?.slice(0, 60)}</>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!isDefault && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => handleSetDefault(key.id)}
+                          title="Set as default"
+                        >
+                          <Star className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => handleTest(key)}
+                        disabled={isTesting}
+                      >
+                        {isTesting ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          "Test"
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                        onClick={() => handleDelete(key.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Providers Reference */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
         <Card className="bg-card border-border">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base text-foreground">Usage & Costs</CardTitle>
+            <CardTitle className="text-base text-foreground">Supported Providers</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="text-center p-4 rounded-lg bg-secondary/50">
-                <p className="text-2xl font-bold text-foreground">0</p>
-                <p className="text-xs text-muted-foreground mt-1">Total Requests</p>
+          <CardContent className="space-y-2">
+            {PROVIDERS.map((p) => (
+              <div key={p} className="flex items-center justify-between text-sm py-1">
+                <span className="text-foreground">{PROVIDER_LABELS[p]}</span>
+                <span className="text-xs text-muted-foreground font-mono">
+                  {p === "custom" ? "any OpenAI-compat endpoint" : PROVIDER_BASE_URLS[p]}
+                </span>
               </div>
-              <div className="text-center p-4 rounded-lg bg-secondary/50">
-                <p className="text-2xl font-bold text-foreground">0</p>
-                <p className="text-xs text-muted-foreground mt-1">Tokens Used</p>
-              </div>
-              <div className="text-center p-4 rounded-lg bg-secondary/50">
-                <p className="text-2xl font-bold text-foreground">$0.00</p>
-                <p className="text-xs text-muted-foreground mt-1">Estimated Cost</p>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-4">
-              Usage tracking will be available once connected to Lovable Cloud.
+            ))}
+            <p className="text-xs text-muted-foreground pt-2 border-t border-border mt-2">
+              You can also use local models (Ollama, LM Studio) via Custom endpoint.
             </p>
           </CardContent>
         </Card>

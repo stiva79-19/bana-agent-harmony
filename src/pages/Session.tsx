@@ -3,13 +3,15 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Send, Pause, Play, RotateCcw, ChevronDown, Bot } from "lucide-react";
+import { Send, Pause, Play, RotateCcw, ChevronDown, Bot, Settings, AlertTriangle } from "lucide-react";
 import { ChatMessage, AgentRole, DEFAULT_AGENTS } from "@/lib/agents";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import { sessionStore, useSessionMessages } from "@/lib/session-store";
+import { loadApiKeys, getDefaultKey } from "@/lib/api-keys";
+import { runPipeline } from "@/lib/pipeline-runner";
+import { useNavigate } from "react-router-dom";
 
 const roleColorMap: Record<AgentRole | "user", string> = {
   planner: "bg-agent-planner text-white",
@@ -45,19 +47,17 @@ const ThinkingIndicator = ({ agentName }: { agentName: string }) => (
 );
 
 export default function Session() {
+  const navigate = useNavigate();
   const { messages, isRunning, thinkingAgent } = useSessionMessages();
   const [input, setInput] = useState("");
-  const [isPaused, setIsPaused] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const agents = DEFAULT_AGENTS;
 
-  const setMessages = (msgs: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
-    if (typeof msgs === "function") {
-      sessionStore.setMessages(msgs(sessionStore.messages));
-    } else {
-      sessionStore.setMessages(msgs);
-    }
-  };
+  const apiKeyStore = loadApiKeys();
+  const hasKey = !!getDefaultKey(apiKeyStore);
+
   const setIsRunning = (val: boolean) => sessionStore.setRunning(val);
   const setThinkingAgent = (val: string | null) => sessionStore.setThinkingAgent(val);
 
@@ -67,63 +67,62 @@ export default function Session() {
     }
   }, [messages, thinkingAgent]);
 
-  const simulateAgentResponse = async (agentIndex: number, userTask: string, allMessages: ChatMessage[]) => {
-    const agent = agents[agentIndex];
-    if (!agent) return;
+  // Track streaming messages — update in place
+  const messageMapRef = useRef<Map<string, ChatMessage>>(new Map());
 
-    setThinkingAgent(agent.name);
-
-    // Simulate thinking delay
-    await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1500));
-
-    const responses: Record<AgentRole, string> = {
-      planner: `## Task Breakdown\n\nAnalyzing: **"${userTask}"**\n\n### Steps:\n1. **Define component structure** — Identify required components and their hierarchy\n2. **Implement core logic** — Write the main functionality with proper state management\n3. **Add styling** — Apply consistent design system styles\n4. **Error handling** — Add validation and error states\n\n> Assigning Step 1-2 to **Coder**, then **Reviewer** for quality check.`,
-      coder: "## Implementation\n\n```tsx\nimport { useState } from 'react';\nimport { Button } from '@/components/ui/button';\nimport { Input } from '@/components/ui/input';\n\nexport function LoginForm() {\n  const [email, setEmail] = useState('');\n  const [password, setPassword] = useState('');\n  const [loading, setLoading] = useState(false);\n\n  const handleSubmit = async (e: React.FormEvent) => {\n    e.preventDefault();\n    setLoading(true);\n    try {\n      // Authentication logic here\n      await authenticate(email, password);\n    } catch (err) {\n      console.error('Login failed:', err);\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  return (\n    <form onSubmit={handleSubmit}>\n      <Input\n        type=\"email\"\n        value={email}\n        onChange={(e) => setEmail(e.target.value)}\n        placeholder=\"Email\"\n      />\n      <Input\n        type=\"password\"\n        value={password}\n        onChange={(e) => setPassword(e.target.value)}\n        placeholder=\"Password\"\n      />\n      <Button type=\"submit\" disabled={loading}>\n        {loading ? 'Signing in...' : 'Sign In'}\n      </Button>\n    </form>\n  );\n}\n```\n\nComponent implements email/password login with loading state and error handling.",
-      reviewer: '## Code Review\n\n**Rating: REQUEST_CHANGES**\n\n### Issues Found:\n1. ⚠️ **Missing input validation** — No email format check or password length requirement\n2. ⚠️ **No error display** — User won\'t see why login failed\n3. 🔒 **Security** — Should add rate limiting consideration\n\n### Suggested Fix:\n```tsx\nconst [error, setError] = useState<string | null>(null);\n\nif (!email.includes("@")) {\n  setError("Invalid email format");\n  return;\n}\n```\n\n> Sending back to **Coder** for fixes.',
-      tester: "## Test Results\n\n```typescript\ndescribe('LoginForm', () => {\n  it('renders email and password inputs', () => {\n    render(<LoginForm />);\n    expect(screen.getByPlaceholderText('Email')).toBeInTheDocument();\n    expect(screen.getByPlaceholderText('Password')).toBeInTheDocument();\n  });\n\n  it('shows loading state on submit', async () => {\n    render(<LoginForm />);\n    fireEvent.click(screen.getByText('Sign In'));\n    expect(screen.getByText('Signing in...')).toBeInTheDocument();\n  });\n\n  it('validates email format', () => {\n    // Test with invalid email\n  });\n});\n```\n\n✅ 2/3 tests passing\n❌ 1 test needs implementation after Coder fixes validation",
-      custom: "Processing task...",
-    };
-
-    const msg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      role: "assistant",
-      agentId: agent.id,
-      agentName: agent.name,
-      agentRole: agent.role,
-      content: responses[agent.role],
-      timestamp: new Date(),
-      reasoning: `Agent ${agent.name} processed the conversation context and generated a response based on its ${agent.role} role.`,
-    };
-
-    setThinkingAgent(null);
-    setMessages((prev) => [...prev, msg]);
-
-    // Continue pipeline
-    if (agentIndex < agents.length - 1 && !isPaused) {
-      await simulateAgentResponse(agentIndex + 1, userTask, [...allMessages, msg]);
+  const handleMessage = (msg: ChatMessage) => {
+    const existing = messageMapRef.current.get(msg.id);
+    if (!existing) {
+      messageMapRef.current.set(msg.id, msg);
+      sessionStore.addMessage(msg);
     } else {
-      setIsRunning(false);
+      messageMapRef.current.set(msg.id, msg);
+      sessionStore.setMessages(
+        sessionStore.messages.map((m) => (m.id === msg.id ? msg : m))
+      );
     }
   };
 
   const handleSend = async () => {
     if (!input.trim() || isRunning) return;
+    if (!hasKey) {
+      setError("Please add an API key in Settings first.");
+      return;
+    }
 
-    const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      role: "user",
-      content: input.trim(),
-      timestamp: new Date(),
-    };
-
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
+    setError(null);
+    messageMapRef.current.clear();
     const task = input.trim();
     setInput("");
     setIsRunning(true);
-    setIsPaused(false);
 
-    await simulateAgentResponse(0, task, newMessages);
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      await runPipeline({
+        task,
+        agents,
+        apiKeyStore,
+        onMessage: handleMessage,
+        onThinking: setThinkingAgent,
+        signal: controller.signal,
+      });
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        setError((e as Error).message);
+      }
+    } finally {
+      setIsRunning(false);
+      setThinkingAgent(null);
+      abortRef.current = null;
+    }
+  };
+
+  const handleStop = () => {
+    abortRef.current?.abort();
+    setIsRunning(false);
+    setThinkingAgent(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -134,8 +133,10 @@ export default function Session() {
   };
 
   const resetSession = () => {
+    handleStop();
     sessionStore.reset();
-    setIsPaused(false);
+    messageMapRef.current.clear();
+    setError(null);
   };
 
   return (
@@ -153,18 +154,44 @@ export default function Session() {
           )}
         </div>
         <div className="flex gap-1">
-          {isRunning && (
-            <Button variant="ghost" size="sm" onClick={() => setIsPaused(!isPaused)} className="h-7 text-xs">
-              {isPaused ? <Play className="h-3 w-3 mr-1" /> : <Pause className="h-3 w-3 mr-1" />}
-              {isPaused ? "Resume" : "Pause"}
+          {isRunning ? (
+            <Button variant="ghost" size="sm" onClick={handleStop} className="h-7 text-xs">
+              <Pause className="h-3 w-3 mr-1" />
+              Stop
             </Button>
-          )}
+          ) : null}
           <Button variant="ghost" size="sm" onClick={resetSession} className="h-7 text-xs">
             <RotateCcw className="h-3 w-3 mr-1" />
             Reset
           </Button>
         </div>
       </div>
+
+      {/* No API key warning */}
+      {!hasKey && (
+        <div className="mx-4 mt-3 flex items-center gap-3 rounded-lg border border-yellow-800/40 bg-yellow-950/30 p-3">
+          <AlertTriangle className="h-4 w-4 text-yellow-400 shrink-0" />
+          <p className="text-xs text-yellow-300 flex-1">
+            No API key configured. Add one in Settings to start real AI sessions.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-yellow-300 hover:text-yellow-200"
+            onClick={() => navigate("/settings")}
+          >
+            <Settings className="h-3 w-3 mr-1" />
+            Settings
+          </Button>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="mx-4 mt-3 rounded-lg border border-red-800/40 bg-red-950/30 p-3">
+          <p className="text-xs text-red-300">{error}</p>
+        </div>
+      )}
 
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3" ref={scrollRef}>
@@ -184,10 +211,15 @@ export default function Session() {
             <p className="text-sm text-muted-foreground mt-1 max-w-md">
               Submit a coding task and watch the agents collaborate: Planner → Coder → Reviewer → Tester
             </p>
+            {hasKey && (
+              <Badge variant="outline" className="mt-3 text-green-400 border-green-800/40 bg-green-950/20 text-xs">
+                ✓ API key ready
+              </Badge>
+            )}
           </div>
         )}
 
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
           {messages.map((msg) => (
             <motion.div
               key={msg.id}
@@ -234,7 +266,7 @@ export default function Session() {
                     ),
                   }}
                 >
-                  {msg.content}
+                  {msg.content || "▍"}
                 </ReactMarkdown>
               </div>
               {msg.reasoning && (
@@ -264,13 +296,20 @@ export default function Session() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isRunning ? "Agents are working... you can inject a message" : 'Describe a task, e.g. "Build a login form with validation"'}
+            placeholder={
+              !hasKey
+                ? "Add an API key in Settings to start…"
+                : isRunning
+                ? "Agents are working…"
+                : 'Describe a task, e.g. "Build a login form with validation"'
+            }
+            disabled={isRunning}
             rows={1}
             className="resize-none bg-background text-sm min-h-[40px]"
           />
           <Button
             onClick={handleSend}
-            disabled={!input.trim()}
+            disabled={!input.trim() || isRunning || !hasKey}
             size="icon"
             className="shrink-0 h-10 w-10"
           >
