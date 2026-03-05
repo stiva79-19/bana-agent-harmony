@@ -19,8 +19,8 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <OnboardingModal />
       <BrowserRouter>
+        <OnboardingModal />
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<Index />} />
